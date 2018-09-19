@@ -13,6 +13,7 @@
 #include <set>
 #include <unordered_map>
 #include <vector>
+#include <iostream> 
 
 //
 // Yet another caching allocator for CUDA device allocations.
@@ -109,6 +110,9 @@ static bool BlockComparator(const Block* a, const Block* b)
 
 } // namespace
 
+std::clock_t start;   
+bool init = true;
+
 struct THCCachingAllocator
 {
   typedef bool (*Comparison)(const Block*, const Block*);
@@ -134,6 +138,8 @@ struct THCCachingAllocator
 
   // outstanding cuda events
   std::deque<std::pair<cudaEvent_t, Block*>> cuda_events;
+
+  size_t all_size = 0;
 
   THCCachingAllocator() :
       large_blocks(BlockComparator),
@@ -165,6 +171,16 @@ struct THCCachingAllocator
 
     size = round_size(size);
     bool small = size <= kSmallAlloc;
+
+    all_size += size;   
+    if (init) {   
+      init = false;   
+      std::cout << 0 << ' ' << all_size << ' ' << size << '\n';   
+      start = std::clock();   
+    }     
+    else {    
+      std::cout << (std::clock() - start) / (double)(CLOCKS_PER_SEC / 1000) << " " << all_size << ' ' << size << '\n';    
+    }
 
     DeviceStats &stats = get_stats_for_device(device);
 
@@ -229,6 +245,12 @@ struct THCCachingAllocator
     Block* block = it->second;
     allocated_blocks.erase(it);
     block->allocated = false;
+
+    long temp = long(all_size) - block->size;   
+    if (temp >= 0) {    
+      all_size -= block->size;    
+      std::cout << (std::clock() - start) / (double)(CLOCKS_PER_SEC / 1000) << " " << all_size << ' ' << long(block->size) * (-1) << '\n';    
+    }
 
     get_stats_for_device(block->device).decreaseAllocated(block->size);
     if (!block->stream_uses.empty()) {
